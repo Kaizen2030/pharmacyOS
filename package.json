@@ -7,6 +7,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "backfill-pins": "node scripts/backfill-pin-hash.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "electron:dev": "concurrently \"vite\" \"electron .\"",
     "obfuscate": "javascript-obfuscator dist --output dist --compact true --control-flow-flattening true --string-array true --string-array-encoding base64 --split-strings true --identifier-names-generator hexadecimal",
     "electron:build": "vite build && npm run obfuscate && electron-builder",
@@ -51,17 +54,21 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
+    "dexie": "^4.4.2",
+    "jszip": "^3.10.1",
+    "node-thermal-printer": "^4.6.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.2.0",
+    "@vitejs/plugin-react": "^4.3.1",
     "concurrently": "^8.2.0",
     "dotenv": "^17.4.2",
-    "electron": "^28.0.0",
-    "electron-builder": "^24.9.1",
+    "electron": "^33.0.0",
+    "electron-builder": "^24.13.3",
     "javascript-obfuscator": "^5.4.1",
     "png2icons": "^2.0.1",
-    "vite": "^5.0.0"
+    "vite": "^5.4.21",
+    "vitest": "^4.1.5"
   }
 }

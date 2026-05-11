@@ -24,6 +24,9 @@ export default function AI() {
   const [imagePreview, setImagePreview] = useState(null)
   const [loading, setLoading] = useState(false)
   const [inventory, setInventory] = useState([])
+  const [feedbackMessageIndex, setFeedbackMessageIndex] = useState(null)
+  const [feedbackText, setFeedbackText] = useState('')
+  const [submittingFeedback, setSubmittingFeedback] = useState(false)
 
   useEffect(() => {
     if (pharmacyId) fetchInventory()
@@ -58,7 +61,11 @@ export default function AI() {
 
     try {
       const systemPrompt = `You are a professional pharmacist AI for ${pharmacyName || 'PharmacyOS'} in Kenya. 
-Give complete, detailed, and well-structured answers. Do not cut off mid-sentence.`
+Give complete, detailed, and well-structured answers. Do not cut off mid-sentence.
+
+CRITICAL SAFETY RULES:
+When identifying drugs from images, never use definitive language. Always say 'This appears to be...' or 'Likely matches...' and always end image analyses with 'Verify before dispensing.'
+When discussing dosing or contraindications, end with 'Verify with current clinical guidelines.'`
 
       const fullPrompt = `${systemPrompt}\n\n${question || 'Identify this medicine and give full details.'}`
 
@@ -85,6 +92,25 @@ Give complete, detailed, and well-structured answers. Do not cut off mid-sentenc
     setLoading(false)
   }
 
+  const saveFeedback = async (messageText, feedback, correction = '') => {
+    setSubmittingFeedback(true)
+    try {
+      const { error } = await supabase.from('ai_feedback').insert([{
+        pharmacy_id: pharmacyId,
+        message_text: messageText,
+        feedback: feedback,
+        correction: correction,
+        created_at: new Date().toISOString()
+      }])
+      if (error) throw error
+      setFeedbackMessageIndex(null)
+      setFeedbackText('')
+    } catch (err) {
+      console.error('Feedback save error:', err)
+    }
+    setSubmittingFeedback(false)
+  }
+
   return (
     <div style={styles.page}>
       <div style={styles.topbar}>
@@ -92,13 +118,56 @@ Give complete, detailed, and well-structured answers. Do not cut off mid-sentenc
         <span style={styles.powered}>Automated medication guidance for pharmacy staff</span>
       </div>
 
+      <div style={styles.disclaimerBanner}>
+        <strong>⚠️ Disclaimer:</strong> AI-assisted guidance only — always verify dosing, interactions, and contraindications with official references before dispensing.
+      </div>
+
       <div style={styles.chatWrap}>
         <div style={styles.chatMessages}>
           {messages.map((msg, i) => (
-            <div key={i} style={msg.type === 'user' ? styles.msgUser : styles.msgBot}>
-              {msg.type === 'bot' && <div style={styles.botLabel}>PharmacyOS AI </div>}
-              {msg.image && <img src={msg.image} alt="uploaded" style={styles.chatImage} />}
-              <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>{msg.text}</div>
+            <div key={i}>
+              <div style={msg.type === 'user' ? styles.msgUser : styles.msgBot}>
+                {msg.type === 'bot' && <div style={styles.botLabel}>PharmacyOS AI </div>}
+                {msg.image && <img src={msg.image} alt="uploaded" style={styles.chatImage} />}
+                <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>{msg.text}</div>
+              </div>
+              {msg.type === 'bot' && (
+                <div style={styles.reactionRow}>
+                  <button
+                    style={styles.reactionBtn}
+                    onClick={() => saveFeedback(msg.text, 'positive')}
+                    title="This was helpful"
+                  >
+                    👍
+                  </button>
+                  <button
+                    style={styles.reactionBtn}
+                    onClick={() => setFeedbackMessageIndex(i)}
+                    title="This needs improvement"
+                  >
+                    👎
+                  </button>
+                  {feedbackMessageIndex === i && (
+                    <div style={styles.feedbackForm}>
+                      <input
+                        type="text"
+                        style={styles.feedbackInput}
+                        placeholder="What was wrong?"
+                        value={feedbackText}
+                        onChange={e => setFeedbackText(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && feedbackText.trim() && saveFeedback(msg.text, 'negative', feedbackText)}
+                      />
+                      <button
+                        style={styles.feedbackSubmitBtn}
+                        onClick={() => feedbackText.trim() && saveFeedback(msg.text, 'negative', feedbackText)}
+                        disabled={submittingFeedback || !feedbackText.trim()}
+                      >
+                        {submittingFeedback ? '...' : 'Submit'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
           {loading && <div style={styles.msgBot}><div style={styles.botLabel}>PharmacyOS AI · Gemini</div>Thinking...</div>}
@@ -166,6 +235,12 @@ const styles = {
   imagePreview: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', padding: '8px 12px', background: '#f9fbf9', borderRadius: '8px', border: '1px dashed #ccc' },
   previewImg: { maxHeight: '70px', borderRadius: '6px' },
   removeBtn: { background: '#FCEBEB', color: '#A32D2D', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer', marginLeft: 'auto' },
+  disclaimerBanner: { background: '#FFFBEB', border: '1px solid #FCD34D', color: '#92400E', borderRadius: '10px', padding: '10px 14px', fontSize: '12px', marginBottom: '12px', lineHeight: '1.4' },
+  reactionRow: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' },
+  reactionBtn: { background: '#fff', border: '1px solid #ddd', borderRadius: '8px', padding: '6px 10px', cursor: 'pointer', fontSize: '14px' },
+  feedbackForm: { display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px', flexWrap: 'wrap' },
+  feedbackInput: { flex: 1, minWidth: '180px', padding: '8px 10px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '12px' },
+  feedbackSubmitBtn: { background: '#0F6E56', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px' },
   quickQueries: { marginTop: '16px' },
   cardTitle: { fontSize: '13px', fontWeight: '600', color: '#111', marginBottom: '8px' },
   quickButtons: { display: 'flex', flexWrap: 'wrap', gap: '8px' },

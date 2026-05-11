@@ -1,9 +1,25 @@
 import { useEffect, useState } from 'react'
 import supabase from '../supabase'
 import { usePharmacy } from '../context'
+import { buildLedgerAuditFields, insertRowsWithSchemaFallback, resolveStaffIdentity } from '../utils/audit'
 
 export default function Credit() {
-  const { pharmacyId, userId, currentUserName, currentUserEmail } = usePharmacy()
+  const {
+    pharmacyId,
+    userId,
+    currentUserName,
+    currentUserEmail,
+    authenticatedStaff,
+    activePosStaff,
+  } = usePharmacy()
+  const { operatorName, operatorRole } = resolveStaffIdentity({
+    activePosStaff,
+    authenticatedStaff,
+    pharmacyId,
+    fallbackUserId: userId,
+    fallbackName: currentUserName,
+    fallbackEmail: currentUserEmail,
+  })
   const [debts, setDebts] = useState([])           // unpaid credit sales
   const [settledThisMonth, setSettledThisMonth] = useState(0)
   const [settledCount, setSettledCount] = useState(0)
@@ -33,10 +49,12 @@ export default function Credit() {
   async function fetchDebts() {
     const { data } = await supabase
       .from('sales_ledger')
+      // Limit credit debt rows to 200 to avoid unbounded ledger queries.
       .select('*')
       .eq('pharmacy_id', pharmacyId)
       .ilike('payment_method', '%credit%')
       .order('sold_at', { ascending: false })
+      .limit(200)
 
     setDebts(data || [])
     setLoading(false)
@@ -90,12 +108,18 @@ export default function Credit() {
       payment_method: 'Credit (Debt)',
       customer_name: formData.customer_name.trim(),
       sold_at: new Date().toISOString(),
-      cashier_id: userId || 'AD',
-      cashier_name: currentUserName || currentUserEmail || 'Unknown',
-      pharmacy_id: pharmacyId
+      pharmacy_id: pharmacyId,
+      ...buildLedgerAuditFields({
+        activePosStaff,
+        authenticatedStaff,
+        pharmacyId,
+        fallbackUserId: userId,
+        fallbackName: currentUserName,
+        fallbackEmail: currentUserEmail,
+      }),
     }
 
-    const { error } = await supabase.from('sales_ledger').insert([saleData])
+    const { error } = await insertRowsWithSchemaFallback('sales_ledger', [saleData])
     if (error) {
       alert('Failed: ' + error.message)
     } else {
@@ -193,6 +217,9 @@ export default function Credit() {
         <div style={styles.overlay}>
           <div style={styles.modal}>
             <h3 style={styles.modalTitle}>Log New Credit Sale</h3>
+            <div style={styles.staffNote}>
+              Recording under <strong>{operatorName}</strong>{operatorRole ? ` (${operatorRole})` : ''}.
+            </div>
             
             <div style={styles.formGroup}>
               <label>Customer Name</label>
@@ -311,6 +338,7 @@ const styles = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: '#fff', borderRadius: '10px', padding: '24px', width: '420px' },
   modalTitle: { fontSize: '15px', fontWeight: '600', color: '#111', marginBottom: '16px' },
+  staffNote: { fontSize: '12px', color: '#0F6E56', background: '#E9F7F2', border: '1px solid #BDE5D8', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px' },
   btnPrimary: { background: '#0F6E56', color: '#fff', border: 'none', padding: '12px', borderRadius: '8px', cursor: 'pointer', width: '100%', marginBottom: '8px' },
   btnSecondary: { background: '#fff', color: '#333', border: '1px solid #ddd', padding: '12px', borderRadius: '8px', cursor: 'pointer', width: '100%' },
   searchContainer: { marginBottom: '16px' },

@@ -1,10 +1,27 @@
 import { useEffect, useState } from 'react'
 import supabase from '../supabase'
 import { usePharmacy } from '../context'
+import { buildLedgerAuditFields, insertRowsWithSchemaFallback, resolveStaffIdentity } from '../utils/audit'
 
 export default function Claims() {
-  const { pharmacyId, isOwner } = usePharmacy()
+  const {
+    pharmacyId,
+    isOwner,
+    userId,
+    currentUserName,
+    currentUserEmail,
+    authenticatedStaff,
+    activePosStaff,
+  } = usePharmacy()
   const canEdit = isOwner
+  const { operatorName, operatorRole } = resolveStaffIdentity({
+    activePosStaff,
+    authenticatedStaff,
+    pharmacyId,
+    fallbackUserId: userId,
+    fallbackName: currentUserName,
+    fallbackEmail: currentUserEmail,
+  })
   const [claims, setClaims] = useState([])
   const [allSales, setAllSales] = useState([])
   const [showForm, setShowForm] = useState(false)
@@ -297,6 +314,9 @@ export default function Claims() {
         <div style={styles.overlay}>
           <div style={styles.modal}>
             <h3 style={styles.modalTitle}>File New SHA Claim</h3>
+            <div style={styles.staffNote}>
+              Recording under <strong>{operatorName}</strong>{operatorRole ? ` (${operatorRole})` : ''}.
+            </div>
             <div style={styles.formGrid}>
               {[
                 { label: 'SHA Member No.', key: 'member_no', placeholder: 'Membership number' },
@@ -334,10 +354,32 @@ export default function Claims() {
               <button onClick={() => setShowForm(false)} style={styles.btnSecondary}>Cancel</button>
               <button 
                 style={styles.btnPrimary} 
-                onClick={() => {
+                onClick={async () => {
+                  if (!form.member_no || !form.drug_name || !form.amount) {
+                    return alert('Fill in all required fields')
+                  }
+                  const { error } = await insertRowsWithSchemaFallback('sales_ledger', [{
+                    pharmacy_id: pharmacyId,
+                    drug_name: form.drug_name,
+                    qty_sold: parseInt(form.quantity, 10) || 1,
+                    total_kes: parseFloat(form.amount),
+                    payment_method: form.fund_type,
+                    customer_name: form.member_no,
+                    sold_at: new Date().toISOString(),
+                    ...buildLedgerAuditFields({
+                      activePosStaff,
+                      authenticatedStaff,
+                      pharmacyId,
+                      fallbackUserId: userId,
+                      fallbackName: currentUserName,
+                      fallbackEmail: currentUserEmail,
+                    }),
+                  }])
+                  if (error) return alert('Error: ' + error.message)
                   alert('SHA Claim filed!')
                   setShowForm(false)
                   setForm({ member_no: '', drug_name: '', quantity: '', diagnosis_code: '', fund_type: 'SHIF', amount: '' })
+                  fetchClaims()
                 }}
               >
                 File Claim
@@ -387,6 +429,7 @@ const styles = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: '#fff', borderRadius: '10px', padding: '24px', width: '580px', maxHeight: '90vh', overflowY: 'auto' },
   modalTitle: { fontSize: '15px', fontWeight: '600', color: '#111', marginBottom: '16px' },
+  staffNote: { fontSize: '12px', color: '#0F6E56', background: '#E9F7F2', border: '1px solid #BDE5D8', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px' },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '8px' },
   formGroup: { display: 'flex', flexDirection: 'column', gap: '4px' },
   label: { fontSize: '11px', color: '#555' },

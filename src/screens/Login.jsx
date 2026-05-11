@@ -107,7 +107,7 @@ export default function Login({ onLogin, isPasswordRecovery, onResetDone }) {
     setError('')
     try {
       const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'http://localhost:5173'
+        redirectTo: window.location.origin
       })
       if (err) setError(getErrorMessage(err))
       else setResetSent(true)
